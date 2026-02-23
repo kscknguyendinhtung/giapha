@@ -1,23 +1,27 @@
 import express from "express";
-import Database from "better-sqlite3";
+import sqlite3 from "sqlite3";
+import { open, Database } from "sqlite";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-let db: any;
+let db: Database | null = null;
 
-function getDb() {
+async function getDb() {
   if (!db) {
     try {
       const dbPath = process.env.VERCEL 
         ? path.join("/tmp", "giapha.db") 
         : path.join(__dirname, "giapha.db");
       
-      db = new Database(dbPath);
+      db = await open({
+        filename: dbPath,
+        driver: sqlite3.Database
+      });
 
       // Initialize Database
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS members (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
@@ -43,15 +47,15 @@ function getDb() {
       `);
 
       // Ensure columns exist (simple migration)
-      const columns = db.prepare("PRAGMA table_info(members)").all();
+      const columns = await db.all("PRAGMA table_info(members)");
       const columnNames = columns.map((c: any) => c.name);
-      if (!columnNames.includes("address")) db.exec("ALTER TABLE members ADD COLUMN address TEXT");
-      if (!columnNames.includes("phone")) db.exec("ALTER TABLE members ADD COLUMN phone TEXT");
-      if (!columnNames.includes("burial_place")) db.exec("ALTER TABLE members ADD COLUMN burial_place TEXT");
-      if (!columnNames.includes("child_order")) db.exec("ALTER TABLE members ADD COLUMN child_order INTEGER");
-      if (!columnNames.includes("spouse_order")) db.exec("ALTER TABLE members ADD COLUMN spouse_order INTEGER");
+      if (!columnNames.includes("address")) await db.exec("ALTER TABLE members ADD COLUMN address TEXT");
+      if (!columnNames.includes("phone")) await db.exec("ALTER TABLE members ADD COLUMN phone TEXT");
+      if (!columnNames.includes("burial_place")) await db.exec("ALTER TABLE members ADD COLUMN burial_place TEXT");
+      if (!columnNames.includes("child_order")) await db.exec("ALTER TABLE members ADD COLUMN child_order INTEGER");
+      if (!columnNames.includes("spouse_order")) await db.exec("ALTER TABLE members ADD COLUMN spouse_order INTEGER");
 
-      db.exec(`
+      await db.exec(`
         CREATE TABLE IF NOT EXISTS config (
           id INTEGER PRIMARY KEY CHECK (id = 1),
           title TEXT DEFAULT 'Gia Phả Gia Đình',
@@ -74,19 +78,18 @@ function getDb() {
       `);
 
       // Ensure config columns exist
-      const configColumns = db.prepare("PRAGMA table_info(config)").all();
+      const configColumns = await db.all("PRAGMA table_info(config)");
       const configColumnNames = configColumns.map((c: any) => c.name);
-      if (!configColumnNames.includes("overlay_url")) db.exec("ALTER TABLE config ADD COLUMN overlay_url TEXT");
-      if (!configColumnNames.includes("overlay_x")) db.exec("ALTER TABLE config ADD COLUMN overlay_x INTEGER DEFAULT 0");
-      if (!configColumnNames.includes("overlay_y")) db.exec("ALTER TABLE config ADD COLUMN overlay_y INTEGER DEFAULT 0");
-      if (!configColumnNames.includes("overlay_scale")) db.exec("ALTER TABLE config ADD COLUMN overlay_scale REAL DEFAULT 1.0");
-      if (!configColumnNames.includes("tree_x")) db.exec("ALTER TABLE config ADD COLUMN tree_x INTEGER DEFAULT 0");
-      if (!configColumnNames.includes("tree_y")) db.exec("ALTER TABLE config ADD COLUMN tree_y INTEGER DEFAULT 0");
-      if (!configColumnNames.includes("tree_scale")) db.exec("ALTER TABLE config ADD COLUMN tree_scale REAL DEFAULT 1.0");
-      if (!configColumnNames.includes("title_lines")) db.exec("ALTER TABLE config ADD COLUMN title_lines TEXT");
+      if (!configColumnNames.includes("overlay_url")) await db.exec("ALTER TABLE config ADD COLUMN overlay_url TEXT");
+      if (!configColumnNames.includes("overlay_x")) await db.exec("ALTER TABLE config ADD COLUMN overlay_x INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("overlay_y")) await db.exec("ALTER TABLE config ADD COLUMN overlay_y INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("overlay_scale")) await db.exec("ALTER TABLE config ADD COLUMN overlay_scale REAL DEFAULT 1.0");
+      if (!configColumnNames.includes("tree_x")) await db.exec("ALTER TABLE config ADD COLUMN tree_x INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("tree_y")) await db.exec("ALTER TABLE config ADD COLUMN tree_y INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("tree_scale")) await db.exec("ALTER TABLE config ADD COLUMN tree_scale REAL DEFAULT 1.0");
+      if (!configColumnNames.includes("title_lines")) await db.exec("ALTER TABLE config ADD COLUMN title_lines TEXT");
     } catch (err) {
       console.error("Database initialization failed:", err);
-      // Fallback or rethrow
       throw err;
     }
   }
@@ -103,31 +106,34 @@ app.get("/api/health", (req, res) => {
   res.json({ 
     status: "ok", 
     env: process.env.NODE_ENV,
-    vercel: !!process.env.VERCEL,
-    tmp_exists: true // just a placeholder
+    vercel: !!process.env.VERCEL
   });
 });
 
 // API Routes
-app.get("/api/members", (req, res) => {
+app.get("/api/members", async (req, res) => {
   try {
-    const members = getDb().prepare("SELECT * FROM members").all();
+    const database = await getDb();
+    const members = await database.all("SELECT * FROM members");
     res.json(members);
   } catch (error) {
+    console.error("Fetch members error:", error);
     res.status(500).json({ error: "Failed to fetch members" });
   }
 });
 
-app.get("/api/config", (req, res) => {
+app.get("/api/config", async (req, res) => {
   try {
-    const config = getDb().prepare("SELECT * FROM config WHERE id = 1").get();
+    const database = await getDb();
+    const config = await database.get("SELECT * FROM config WHERE id = 1");
     res.json(config);
   } catch (error) {
+    console.error("Fetch config error:", error);
     res.status(500).json({ error: "Failed to fetch config" });
   }
 });
 
-app.post("/api/config", (req, res) => {
+app.post("/api/config", async (req, res) => {
   try {
     const data = req.body;
     if (!data || typeof data !== 'object') {
@@ -137,7 +143,6 @@ app.post("/api/config", (req, res) => {
     const fields = Object.keys(data).filter(k => k !== 'id');
     if (fields.length === 0) return res.json({ success: true });
 
-    // Validate fields against allowed columns to prevent SQL injection or errors
     const allowedFields = [
       'title', 'title_lines', 'background_url', 'overlay_url', 
       'overlay_x', 'overlay_y', 'overlay_scale', 
@@ -151,7 +156,8 @@ app.post("/api/config", (req, res) => {
     const setClause = validFields.map(f => `${f} = ?`).join(', ');
     const values = validFields.map(f => data[f]);
 
-    getDb().prepare(`UPDATE config SET ${setClause} WHERE id = 1`).run(...values);
+    const database = await getDb();
+    await database.run(`UPDATE config SET ${setClause} WHERE id = 1`, ...values);
     res.json({ success: true });
   } catch (error: any) {
     console.error("Config Update Error:", error);
@@ -159,23 +165,24 @@ app.post("/api/config", (req, res) => {
   }
 });
 
-app.post("/api/members", (req, res) => {
+app.post("/api/members", async (req, res) => {
   const data = { ...req.body };
   for (const key in data) {
     if (data[key] === "") data[key] = null;
   }
   const { name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order } = data;
   try {
-    const info = getDb().prepare(`
+    const database = await getDb();
+    const result = await database.run(`
       INSERT INTO members (name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order);
+    `, name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order);
     
-    const newId = info.lastInsertRowid;
+    const newId = result.lastID;
     
     // Bidirectional spouse update
     if (spouse_id) {
-      getDb().prepare("UPDATE members SET spouse_id = ? WHERE id = ?").run(newId, spouse_id);
+      await database.run("UPDATE members SET spouse_id = ? WHERE id = ?", newId, spouse_id);
     }
     
     res.json({ id: newId });
@@ -185,7 +192,7 @@ app.post("/api/members", (req, res) => {
   }
 });
 
-app.put("/api/members/:id", (req, res) => {
+app.put("/api/members/:id", async (req, res) => {
   const { id } = req.params;
   const data = { ...req.body };
   for (const key in data) {
@@ -193,23 +200,24 @@ app.put("/api/members/:id", (req, res) => {
   }
   const { name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order } = data;
   try {
+    const database = await getDb();
     // Get old spouse to clear if changed
-    const oldMember = getDb().prepare("SELECT spouse_id FROM members WHERE id = ?").get(id) as any;
+    const oldMember = await database.get("SELECT spouse_id FROM members WHERE id = ?", id);
     
-    getDb().prepare(`
+    await database.run(`
       UPDATE members 
       SET name = ?, gender = ?, birth_date = ?, death_date = ?, biography = ?, photo_url = ?, address = ?, phone = ?, burial_place = ?, father_id = ?, mother_id = ?, spouse_id = ?, generation = ?, branch_name = ?, child_order = ?, spouse_order = ?
       WHERE id = ?
-    `).run(name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order, id);
+    `, name, gender, birth_date, death_date, biography, photo_url, address, phone, burial_place, father_id, mother_id, spouse_id, generation, branch_name, child_order, spouse_order, id);
     
     // Update new spouse
     if (spouse_id) {
-      getDb().prepare("UPDATE members SET spouse_id = ? WHERE id = ?").run(id, spouse_id);
+      await database.run("UPDATE members SET spouse_id = ? WHERE id = ?", id, spouse_id);
     }
     
     // Clear old spouse if it was different
     if (oldMember && oldMember.spouse_id && oldMember.spouse_id !== spouse_id) {
-      getDb().prepare("UPDATE members SET spouse_id = NULL WHERE id = ?").run(oldMember.spouse_id);
+      await database.run("UPDATE members SET spouse_id = NULL WHERE id = ?", oldMember.spouse_id);
     }
     
     res.json({ success: true });
@@ -219,12 +227,14 @@ app.put("/api/members/:id", (req, res) => {
   }
 });
 
-app.delete("/api/members/:id", (req, res) => {
+app.delete("/api/members/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    getDb().prepare("DELETE FROM members WHERE id = ?").run(id);
+    const database = await getDb();
+    await database.run("DELETE FROM members WHERE id = ?", id);
     res.json({ success: true });
   } catch (error) {
+    console.error("Delete member error:", error);
     res.status(500).json({ error: "Failed to delete member" });
   }
 });
