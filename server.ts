@@ -1,89 +1,94 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-let db: Database.Database;
+let db: any;
 
 function getDb() {
   if (!db) {
-    const dbPath = process.env.VERCEL 
-      ? path.join("/tmp", "giapha.db") 
-      : path.join(__dirname, "giapha.db");
-    
-    db = new Database(dbPath);
+    try {
+      const dbPath = process.env.VERCEL 
+        ? path.join("/tmp", "giapha.db") 
+        : path.join(__dirname, "giapha.db");
+      
+      db = new Database(dbPath);
 
-    // Initialize Database
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS members (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        gender TEXT CHECK(gender IN ('male', 'female', 'other')) NOT NULL,
-        birth_date TEXT,
-        death_date TEXT,
-        biography TEXT,
-        photo_url TEXT,
-        address TEXT,
-        phone TEXT,
-        burial_place TEXT,
-        father_id INTEGER,
-        mother_id INTEGER,
-        spouse_id INTEGER,
-        generation INTEGER DEFAULT 1,
-        branch_name TEXT,
-        child_order INTEGER,
-        spouse_order INTEGER,
-        FOREIGN KEY (father_id) REFERENCES members(id),
-        FOREIGN KEY (mother_id) REFERENCES members(id),
-        FOREIGN KEY (spouse_id) REFERENCES members(id)
-      );
-    `);
+      // Initialize Database
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS members (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          gender TEXT CHECK(gender IN ('male', 'female', 'other')) NOT NULL,
+          birth_date TEXT,
+          death_date TEXT,
+          biography TEXT,
+          photo_url TEXT,
+          address TEXT,
+          phone TEXT,
+          burial_place TEXT,
+          father_id INTEGER,
+          mother_id INTEGER,
+          spouse_id INTEGER,
+          generation INTEGER DEFAULT 1,
+          branch_name TEXT,
+          child_order INTEGER,
+          spouse_order INTEGER,
+          FOREIGN KEY (father_id) REFERENCES members(id),
+          FOREIGN KEY (mother_id) REFERENCES members(id),
+          FOREIGN KEY (spouse_id) REFERENCES members(id)
+        );
+      `);
 
-    // Ensure columns exist (simple migration)
-    const columns = db.prepare("PRAGMA table_info(members)").all();
-    const columnNames = columns.map((c: any) => c.name);
-    if (!columnNames.includes("address")) db.exec("ALTER TABLE members ADD COLUMN address TEXT");
-    if (!columnNames.includes("phone")) db.exec("ALTER TABLE members ADD COLUMN phone TEXT");
-    if (!columnNames.includes("burial_place")) db.exec("ALTER TABLE members ADD COLUMN burial_place TEXT");
-    if (!columnNames.includes("child_order")) db.exec("ALTER TABLE members ADD COLUMN child_order INTEGER");
-    if (!columnNames.includes("spouse_order")) db.exec("ALTER TABLE members ADD COLUMN spouse_order INTEGER");
+      // Ensure columns exist (simple migration)
+      const columns = db.prepare("PRAGMA table_info(members)").all();
+      const columnNames = columns.map((c: any) => c.name);
+      if (!columnNames.includes("address")) db.exec("ALTER TABLE members ADD COLUMN address TEXT");
+      if (!columnNames.includes("phone")) db.exec("ALTER TABLE members ADD COLUMN phone TEXT");
+      if (!columnNames.includes("burial_place")) db.exec("ALTER TABLE members ADD COLUMN burial_place TEXT");
+      if (!columnNames.includes("child_order")) db.exec("ALTER TABLE members ADD COLUMN child_order INTEGER");
+      if (!columnNames.includes("spouse_order")) db.exec("ALTER TABLE members ADD COLUMN spouse_order INTEGER");
 
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS config (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        title TEXT DEFAULT 'Gia Phả Gia Đình',
-        background_url TEXT,
-        overlay_url TEXT,
-        overlay_x INTEGER DEFAULT 0,
-        overlay_y INTEGER DEFAULT 0,
-        overlay_scale REAL DEFAULT 1.0,
-        tree_x INTEGER DEFAULT 0,
-        tree_y INTEGER DEFAULT 0,
-        tree_scale REAL DEFAULT 1.0,
-        title_lines TEXT,
-        title_x INTEGER DEFAULT 50,
-        title_y INTEGER DEFAULT 50,
-        title_font_size INTEGER DEFAULT 48,
-        title_font_family TEXT DEFAULT 'Cormorant Garamond'
-      );
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS config (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          title TEXT DEFAULT 'Gia Phả Gia Đình',
+          background_url TEXT,
+          overlay_url TEXT,
+          overlay_x INTEGER DEFAULT 0,
+          overlay_y INTEGER DEFAULT 0,
+          overlay_scale REAL DEFAULT 1.0,
+          tree_x INTEGER DEFAULT 0,
+          tree_y INTEGER DEFAULT 0,
+          tree_scale REAL DEFAULT 1.0,
+          title_lines TEXT,
+          title_x INTEGER DEFAULT 50,
+          title_y INTEGER DEFAULT 50,
+          title_font_size INTEGER DEFAULT 48,
+          title_font_family TEXT DEFAULT 'Cormorant Garamond'
+        );
 
-      INSERT OR IGNORE INTO config (id, title) VALUES (1, 'Gia Phả Gia Đình');
-    `);
+        INSERT OR IGNORE INTO config (id, title) VALUES (1, 'Gia Phả Gia Đình');
+      `);
 
-    // Ensure config columns exist
-    const configColumns = db.prepare("PRAGMA table_info(config)").all();
-    const configColumnNames = configColumns.map((c: any) => c.name);
-    if (!configColumnNames.includes("overlay_url")) db.exec("ALTER TABLE config ADD COLUMN overlay_url TEXT");
-    if (!configColumnNames.includes("overlay_x")) db.exec("ALTER TABLE config ADD COLUMN overlay_x INTEGER DEFAULT 0");
-    if (!configColumnNames.includes("overlay_y")) db.exec("ALTER TABLE config ADD COLUMN overlay_y INTEGER DEFAULT 0");
-    if (!configColumnNames.includes("overlay_scale")) db.exec("ALTER TABLE config ADD COLUMN overlay_scale REAL DEFAULT 1.0");
-    if (!configColumnNames.includes("tree_x")) db.exec("ALTER TABLE config ADD COLUMN tree_x INTEGER DEFAULT 0");
-    if (!configColumnNames.includes("tree_y")) db.exec("ALTER TABLE config ADD COLUMN tree_y INTEGER DEFAULT 0");
-    if (!configColumnNames.includes("tree_scale")) db.exec("ALTER TABLE config ADD COLUMN tree_scale REAL DEFAULT 1.0");
-    if (!configColumnNames.includes("title_lines")) db.exec("ALTER TABLE config ADD COLUMN title_lines TEXT");
+      // Ensure config columns exist
+      const configColumns = db.prepare("PRAGMA table_info(config)").all();
+      const configColumnNames = configColumns.map((c: any) => c.name);
+      if (!configColumnNames.includes("overlay_url")) db.exec("ALTER TABLE config ADD COLUMN overlay_url TEXT");
+      if (!configColumnNames.includes("overlay_x")) db.exec("ALTER TABLE config ADD COLUMN overlay_x INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("overlay_y")) db.exec("ALTER TABLE config ADD COLUMN overlay_y INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("overlay_scale")) db.exec("ALTER TABLE config ADD COLUMN overlay_scale REAL DEFAULT 1.0");
+      if (!configColumnNames.includes("tree_x")) db.exec("ALTER TABLE config ADD COLUMN tree_x INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("tree_y")) db.exec("ALTER TABLE config ADD COLUMN tree_y INTEGER DEFAULT 0");
+      if (!configColumnNames.includes("tree_scale")) db.exec("ALTER TABLE config ADD COLUMN tree_scale REAL DEFAULT 1.0");
+      if (!configColumnNames.includes("title_lines")) db.exec("ALTER TABLE config ADD COLUMN title_lines TEXT");
+    } catch (err) {
+      console.error("Database initialization failed:", err);
+      // Fallback or rethrow
+      throw err;
+    }
   }
   return db;
 }
@@ -92,6 +97,16 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Health check for Vercel debugging
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "ok", 
+    env: process.env.NODE_ENV,
+    vercel: !!process.env.VERCEL,
+    tmp_exists: true // just a placeholder
+  });
+});
 
 // API Routes
 app.get("/api/members", (req, res) => {
@@ -219,6 +234,7 @@ export { app };
 async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
