@@ -28,8 +28,17 @@ export default function App() {
   const fetchMembers = async () => {
     try {
       const response = await fetch('/api/members');
-      const data = await response.json();
-      setMembers(data);
+      const text = await response.text();
+      if (response.ok) {
+        try {
+          const data = JSON.parse(text);
+          setMembers(data);
+        } catch (e) {
+          console.error('Failed to parse members JSON:', text);
+        }
+      } else {
+        console.error('Failed to fetch members:', text);
+      }
     } catch (error) {
       console.error('Failed to fetch members:', error);
     }
@@ -38,8 +47,17 @@ export default function App() {
   const fetchConfig = async () => {
     try {
       const response = await fetch('/api/config');
-      const data = await response.json();
-      if (data) setConfig(data);
+      const text = await response.text();
+      if (response.ok) {
+        try {
+          const data = JSON.parse(text);
+          if (data) setConfig(data);
+        } catch (e) {
+          console.error('Failed to parse config JSON:', text);
+        }
+      } else {
+        console.error('Failed to fetch config:', text);
+      }
     } catch (error) {
       console.error('Failed to fetch config:', error);
     }
@@ -56,11 +74,11 @@ export default function App() {
         alert('Đã lưu cài đặt thành công!');
       } else {
         let errorMessage = 'Không thể lưu cài đặt';
+        const text = await response.text();
         try {
-          const errorData = await response.json();
+          const errorData = JSON.parse(text);
           errorMessage = errorData.error || errorMessage;
         } catch (e) {
-          const text = await response.text();
           errorMessage = text || errorMessage;
         }
         alert(`Lỗi: ${errorMessage}`);
@@ -117,11 +135,11 @@ export default function App() {
         setSelectedMember(undefined);
       } else {
         let errorMessage = 'Không thể lưu thành viên';
+        const text = await response.text();
         try {
-          const errorData = await response.json();
+          const errorData = JSON.parse(text);
           errorMessage = errorData.error || errorMessage;
         } catch (e) {
-          const text = await response.text();
           errorMessage = text || errorMessage;
         }
         alert(`Lỗi: ${errorMessage}`);
@@ -142,11 +160,11 @@ export default function App() {
         setSelectedMember(undefined);
       } else {
         let errorMessage = 'Không thể xóa thành viên';
+        const text = await response.text();
         try {
-          const errorData = await response.json();
+          const errorData = JSON.parse(text);
           errorMessage = errorData.error || errorMessage;
         } catch (e) {
-          const text = await response.text();
           errorMessage = text || errorMessage;
         }
         alert(`Lỗi: ${errorMessage}`);

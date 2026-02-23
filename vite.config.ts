@@ -7,6 +7,18 @@ export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
     plugins: [react(), tailwindcss()],
+    build: {
+      outDir: 'dist',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor': ['react', 'react-dom', 'motion', 'lucide-react'],
+            'konva': ['konva', 'react-konva', 'use-image'],
+          }
+        }
+      },
+      chunkSizeWarningLimit: 1000,
+    },
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
