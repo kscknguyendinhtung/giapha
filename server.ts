@@ -101,13 +101,36 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// Global error handler for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Health check for Vercel debugging
-app.get("/api/health", (req, res) => {
-  res.json({ 
-    status: "ok", 
-    env: process.env.NODE_ENV,
-    vercel: !!process.env.VERCEL
-  });
+app.get("/api/health", async (req, res) => {
+  try {
+    const database = await getDb();
+    await database.get("SELECT 1");
+    res.json({ 
+      status: "ok", 
+      database: "connected",
+      env: process.env.NODE_ENV,
+      vercel: !!process.env.VERCEL,
+      node_version: process.version
+    });
+  } catch (err: any) {
+    console.error("Health check failed:", err);
+    res.status(500).json({ 
+      status: "error", 
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+      vercel: !!process.env.VERCEL
+    });
+  }
 });
 
 // API Routes
