@@ -70,11 +70,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
+      const text = await response.text();
       if (response.ok) {
         alert('Đã lưu cài đặt thành công!');
       } else {
         let errorMessage = 'Không thể lưu cài đặt';
-        const text = await response.text();
         try {
           const errorData = JSON.parse(text);
           errorMessage = errorData.error || errorMessage;
@@ -121,6 +121,8 @@ export default function App() {
         body: JSON.stringify(memberData),
       });
 
+      const text = await response.text();
+
       if (response.ok) {
         if (!memberData.id) {
           confetti({
@@ -135,7 +137,6 @@ export default function App() {
         setSelectedMember(undefined);
       } else {
         let errorMessage = 'Không thể lưu thành viên';
-        const text = await response.text();
         try {
           const errorData = JSON.parse(text);
           errorMessage = errorData.error || errorMessage;
@@ -154,13 +155,13 @@ export default function App() {
     if (!confirm('Bạn có chắc chắn muốn xóa thành viên này?')) return;
     try {
       const response = await fetch(`/api/members/${id}`, { method: 'DELETE' });
+      const text = await response.text();
       if (response.ok) {
         await fetchMembers();
         setIsModalOpen(false);
         setSelectedMember(undefined);
       } else {
         let errorMessage = 'Không thể xóa thành viên';
-        const text = await response.text();
         try {
           const errorData = JSON.parse(text);
           errorMessage = errorData.error || errorMessage;

@@ -139,87 +139,113 @@ export default function FamilyTree({ members, config, onMemberClick, onConfigUpd
   }, [members.length]);
 
   const treeData = useMemo(() => {
-    const generations: { [key: number]: Member[] } = {};
-    members.forEach(m => {
-      if (!generations[m.generation]) generations[m.generation] = [];
-      generations[m.generation].push(m);
-    });
-
     const positions: { [key: number]: { x: number; y: number } } = {};
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const membersById = new Map(members.map(m => [m.id, m]));
     
-    Object.keys(generations).sort((a, b) => parseInt(a) - parseInt(b)).forEach(genStr => {
-      const gen = parseInt(genStr);
-      const genMembers = generations[gen];
-      const processed = new Set<number>();
-      const ordered: Member[] = [];
+    const subtreeWidths = new Map<number, number>();
+    const getSubtreeWidth = (id: number): number => {
+      if (subtreeWidths.has(id)) return subtreeWidths.get(id)!;
+      
+      const member = membersById.get(id);
+      if (!member) return 0;
 
-      // 1. Identify and sort descendants (those with father_id or roots)
-      const descendants = [...genMembers].filter(m => 
-        (m.father_id != null) || !genMembers.some(s => s.id === m.spouse_id)
-      ).sort((a, b) => {
-        if (a.father_id !== b.father_id) return (Number(a.father_id) || 0) - (Number(b.father_id) || 0);
-        return (a.child_order || 0) - (b.child_order || 0);
-      });
+      const spouse = member.spouse_id ? membersById.get(member.spouse_id) : null;
+      const isSpouseInSameGen = spouse && spouse.generation === member.generation;
+      
+      const children = members.filter(m => 
+        m.father_id === id || m.mother_id === id || 
+        (isSpouseInSameGen && (m.father_id === spouse!.id || m.mother_id === spouse!.id))
+      ).sort((a, b) => (a.child_order || 0) - (b.child_order || 0));
 
-      descendants.forEach(m => {
-        if (processed.has(m.id)) return;
-        ordered.push(m);
-        processed.add(m.id);
+      let width = isSpouseInSameGen ? (NODE_WIDTH * 2 + SPOUSE_GAP) : NODE_WIDTH;
 
-        // Find all spouses of this member in the same generation
-        const spouses = genMembers.filter(s => 
-          (s.spouse_id === m.id || m.spouse_id === s.id) && !processed.has(s.id)
-        ).sort((a, b) => (a.spouse_order || 0) - (b.spouse_order || 0));
-
-        spouses.forEach(s => {
-          ordered.push(s);
-          processed.add(s.id);
+      if (children.length > 0) {
+        let childrenWidth = 0;
+        children.forEach((child, idx) => {
+          childrenWidth += getSubtreeWidth(child.id);
+          if (idx < children.length - 1) childrenWidth += HORIZONTAL_GAP;
         });
+        width = Math.max(width, childrenWidth);
+      }
+      
+      subtreeWidths.set(id, width);
+      if (isSpouseInSameGen) subtreeWidths.set(spouse!.id, width);
+      
+      return width;
+    };
+
+    const processedUnits = new Set<number>();
+    const layoutUnit = (memberId: number, startX: number, y: number) => {
+      if (processedUnits.has(memberId)) return;
+      
+      const member = membersById.get(memberId);
+      if (!member) return;
+      
+      const spouse = member.spouse_id ? membersById.get(member.spouse_id) : null;
+      const isSpouseInSameGen = spouse && spouse.generation === member.generation;
+      
+      const children = members.filter(m => 
+        m.father_id === memberId || m.mother_id === memberId || 
+        (isSpouseInSameGen && (m.father_id === spouse!.id || m.mother_id === spouse!.id))
+      ).sort((a, b) => (a.child_order || 0) - (b.child_order || 0));
+      
+      const unitWidth = getSubtreeWidth(memberId);
+      
+      if (isSpouseInSameGen) {
+        const pairWidth = NODE_WIDTH * 2 + SPOUSE_GAP;
+        const pairLeft = startX + (unitWidth - pairWidth) / 2;
+        positions[memberId] = { x: pairLeft, y };
+        positions[spouse!.id] = { x: pairLeft + NODE_WIDTH + SPOUSE_GAP, y };
+        processedUnits.add(memberId);
+        processedUnits.add(spouse!.id);
+      } else {
+        const memberX = startX + (unitWidth - NODE_WIDTH) / 2;
+        positions[memberId] = { x: memberX, y };
+        processedUnits.add(memberId);
+      }
+
+      let childX = startX;
+      const childY = y + NODE_HEIGHT + VERTICAL_GAP;
+      children.forEach(child => {
+        layoutUnit(child.id, childX, childY);
+        childX += getSubtreeWidth(child.id) + HORIZONTAL_GAP;
       });
+    };
 
-      // 2. Add any remaining members (e.g. disconnected members or spouses of spouses)
-      genMembers.forEach(m => {
-        if (!processed.has(m.id)) {
-          ordered.push(m);
-          processed.add(m.id);
-        }
-      });
-
-      let currentX = 0;
-      const genY = 250 + (gen - 1) * (NODE_HEIGHT + VERTICAL_GAP);
-
-      ordered.forEach((m, idx) => {
-        const isSpousePair = m.spouse_id && idx > 0 && ordered[idx - 1]?.id === m.spouse_id;
-        
-        if (isSpousePair) {
-          currentX += SPOUSE_GAP;
-        } else if (idx > 0) {
-          currentX += HORIZONTAL_GAP;
-        }
-        
-        positions[m.id] = { x: currentX, y: genY };
-        currentX += NODE_WIDTH;
-
-        minX = Math.min(minX, positions[m.id].x);
-        maxX = Math.max(maxX, positions[m.id].x + NODE_WIDTH);
-        minY = Math.min(minY, positions[m.id].y);
-        maxY = Math.max(maxY, positions[m.id].y + NODE_HEIGHT);
-      });
-
-      const genWidth = currentX;
-      const offset = -genWidth / 2;
-      ordered.forEach(m => {
-        positions[m.id].x += offset;
-      });
+    const roots = members.filter(m => !m.father_id && !m.mother_id);
+    let currentX = 0;
+    roots.forEach(root => {
+      if (processedUnits.has(root.id)) return;
+      layoutUnit(root.id, currentX, 250 + (root.generation - 1) * (NODE_HEIGHT + VERTICAL_GAP));
+      currentX += getSubtreeWidth(root.id) + HORIZONTAL_GAP;
     });
 
-    return { positions, bounds: { minX, maxX, minY, maxY } };
+    members.forEach(m => {
+      if (!positions[m.id]) {
+        positions[m.id] = { x: currentX, y: 250 + (m.generation - 1) * (NODE_HEIGHT + VERTICAL_GAP) };
+        currentX += NODE_WIDTH + HORIZONTAL_GAP;
+      }
+    });
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    Object.values(positions).forEach(pos => {
+      minX = Math.min(minX, pos.x);
+      maxX = Math.max(maxX, pos.x + NODE_WIDTH);
+      minY = Math.min(minY, pos.y);
+      maxY = Math.max(maxY, pos.y + NODE_HEIGHT);
+    });
+
+    const treeWidth = maxX - minX;
+    const offset = -minX - treeWidth / 2;
+    Object.keys(positions).forEach(id => {
+      positions[Number(id)].x += offset;
+    });
+
+    return { positions, bounds: { minX: -treeWidth/2, maxX: treeWidth/2, minY, maxY } };
   }, [members]);
 
   const autoFit = () => {
     if (members.length > 0 && treeGroupRef.current) {
-      const group = treeGroupRef.current;
       const { minX, maxX, minY, maxY } = treeData.bounds;
       if (minX === Infinity) return;
 
@@ -288,21 +314,52 @@ export default function FamilyTree({ members, config, onMemberClick, onConfigUpd
 
   const connections = useMemo(() => {
     const lines: any[] = [];
+    const membersById = new Map(members.map(m => [m.id, m]));
+    
     members.forEach(m => {
       const mPos = treeData.positions[m.id];
       if (!mPos) return;
-      if (m.father_id && treeData.positions[m.father_id]) {
-        const fatherPos = treeData.positions[m.father_id];
-        const midY = fatherPos.y + NODE_HEIGHT + VERTICAL_GAP / 2;
+
+      const fatherId = m.father_id;
+      const motherId = m.mother_id;
+      const fPos = fatherId ? treeData.positions[fatherId] : null;
+      const moPos = motherId ? treeData.positions[motherId] : null;
+
+      if (fPos && moPos && membersById.get(fatherId!)?.spouse_id === motherId) {
+        const coupleMidX = (fPos.x + moPos.x + NODE_WIDTH) / 2;
+        const coupleMaxY = Math.max(fPos.y, moPos.y) + NODE_HEIGHT;
+        const midY = coupleMaxY + VERTICAL_GAP / 2;
+        
         lines.push({
           points: [
-            fatherPos.x + NODE_WIDTH / 2, fatherPos.y + NODE_HEIGHT,
-            fatherPos.x + NODE_WIDTH / 2, midY,
+            coupleMidX, coupleMaxY,
+            coupleMidX, midY,
+            mPos.x + NODE_WIDTH / 2, midY,
+            mPos.x + NODE_WIDTH / 2, mPos.y
+          ]
+        });
+      } else if (fPos) {
+        const midY = fPos.y + NODE_HEIGHT + VERTICAL_GAP / 2;
+        lines.push({
+          points: [
+            fPos.x + NODE_WIDTH / 2, fPos.y + NODE_HEIGHT,
+            fPos.x + NODE_WIDTH / 2, midY,
+            mPos.x + NODE_WIDTH / 2, midY,
+            mPos.x + NODE_WIDTH / 2, mPos.y
+          ]
+        });
+      } else if (moPos) {
+        const midY = moPos.y + NODE_HEIGHT + VERTICAL_GAP / 2;
+        lines.push({
+          points: [
+            moPos.x + NODE_WIDTH / 2, moPos.y + NODE_HEIGHT,
+            moPos.x + NODE_WIDTH / 2, midY,
             mPos.x + NODE_WIDTH / 2, midY,
             mPos.x + NODE_WIDTH / 2, mPos.y
           ]
         });
       }
+
       if (m.spouse_id && treeData.positions[m.spouse_id]) {
         const spousePos = treeData.positions[m.spouse_id];
         if (m.id < m.spouse_id) {
